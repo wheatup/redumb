@@ -1,38 +1,77 @@
-import { useState } from 'react';
+import { /* useEffect, */ useState } from 'react';
 
 const globalData = {};
+const globalStates = {};
 
-const redumb = (data = {}) => {
-	const stateMap = {};
+const redumb = () => {
+	const localStates = {};
+	const localData = {};
 
-	const proxy = new Proxy({ ...globalData, ...data }, {
-		get: (target, key) => {
-			if (!stateMap[key]) {
-				stateMap[key] = useState(target[key]);
-			}
-
-			return stateMap[key][0];
-		},
-
-		set(target, key, value) {
-			if (stateMap[key]) {
-				target[key] = value;
-				stateMap[key][1](value);
+	return (initialData, settings = {}) => {
+		const states = new Proxy({}, {
+			get: (target, key) => {
 				if (String(key).startsWith('$')) {
-					globalData[key] = value;
+					if (globalStates[key]) {
+						globalStates[key] = globalStates[key].filter(state => !Object.values(localStates).includes(state));
+					}
 				}
-			} else {
-				console.log(`Key with name ${key} is not defined, ignored!`);
+
+				let value;
+
+				if (String(key).startsWith('$')) {
+					value = globalData[key];
+				} else {
+					value = localData[key];
+				}
+
+				if (typeof value === 'undefined') {
+					value = initialData[key];
+					if (String(key).startsWith('$')) {
+						if (typeof globalData[key] === 'undefined') {
+							if (globalStates[key]) {
+								globalStates[key].forEach(state => state[1](value));
+							}
+						}
+						globalData[key] = value;
+					}
+					localData[key] = value;
+				}
+
+				// eslint-disable-next-line react-hooks/rules-of-hooks
+				localStates[key] = useState(value);
+
+				if (String(key).startsWith('$')) {
+					if (!globalStates[key]) {
+						globalStates[key] = [];
+					}
+					globalStates[key].push(localStates[key]);
+				}
+
+				return localStates[key][0];
 			}
+		});
 
-			return true;
+		const setData = (key, value) => {
+			console.log({ key, value });
+			if (globalStates[key]) {
+				console.log([...globalStates[key]]);
+				globalStates[key].forEach(([, setState]) => setState(value));
+			} else if (localStates[key]) {
+				localStates[key][1](value);
+			}
 		}
-	});
 
-	return [
-		proxy,
-		proxy
-	];
+		// useEffect(() => {
+		// 	return () => setTimeout(() => Object.keys(localStates).forEach(key => {
+		// 		console.log('clean');
+		// 		if (globalStates[key]) {
+		// 			globalStates[key] = globalStates[key].filter(state => !Object.values(localStates).includes(state));
+		// 		}
+		// 	}), 100);
+		// }, []);
+
+		return [states, setData];
+	};
 };
 
 export default redumb;
